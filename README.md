@@ -11,3 +11,4 @@ umi_vis.py have 2 command, dis and vis. "dis" is for UMI distribution analysis a
 ```
 python3 umi_vis.py <dis/vis> <chr:start-end> <output> <bam1> [bam2 ...]
 ```
+The "vis" command will generate SVG plot for given genome region and reads with one UMI will be colored grey and more than 1 UMI will be colored randomly except grey.

@@ -1,2 +1,2 @@
 pysam
-genomeview
+genomeview  # pip install -U git+https://github.com/nspies/genomeview.git

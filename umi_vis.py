@@ -33,24 +33,13 @@ class ThreadWithReturn(threading.Thread):
 ##### visalization ######
 class ColorIter(object):
 	def __init__(self, num):
-		self.colors = [x for x in mc.cnames.keys() 
-				if ('light' in x or 'dark' in x or 'medium' in x) and
-					('grey' not in x and
-						'gray' not in x and
-						'lightblue' != x and
-						'lightsteelblue' != x and
-						'lightskyblue' != x and
-						'lightgoldenrodyellow' != x and
-						'lightyellow' != x and
-						'lightcyan' != x
-					)
-				]
+		self.colors = ['darkblue', 'darkcyan', 'darkgoldenrod', 'darkgreen', 'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue', 'darkturquoise', 'darkviolet', 'lightcoral', 'lightgreen', 'lightpink', 'lightsalmon', 'lightseagreen', 'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise', 'mediumvioletred']
 		self.color = None
 		self.pointer = 0
 		self.len = len(self.colors)
 	def next_color(self): 
 		self.color = self.colors[self.pointer % self.len]
-		self.pointer += 1 
+		self.pointer += 2
 		return self.color
 	def this_color(self):
 		return self.color

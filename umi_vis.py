@@ -11,7 +11,10 @@ UMI is in BAM RX tag.
 import sys
 import pysam
 import threading
+import genomeview
 import numpy as np
+from random import shuffle
+import matplotlib.cm as cm
 import matplotlib.colors as mc
 
 WIN_SIZE = 1000 # 1k
@@ -30,16 +33,72 @@ class ThreadWithReturn(threading.Thread):
 		threading.Thread.join(self, *args)
 		return self._return
 
+# from genomeview
+def color_by_nuc(interval):
+	colors = {"A":"blue", "C":"organge", "G":"green", "T":"black", "N":"gray"}
+	return colors.get(str(interval.variant.alts[0]).upper(), "gray")
+
+class VCFTrack(genomeview.IntervalTrack):
+	def __init__(self, vcf_path, name=None):
+		super().__init__([], name=name)
+		self.vcf = pysam.VariantFile(vcf_path)
+		self.intervals = self
+		self.color_fn = color_by_nuc
+		self.row_height = 20
+		self.min_variant_pixel_width = 2
+	
+	def __iter__(self):
+		chrom = genomeview.match_chrom_format(self.scale.chrom, self.vcf.header.contigs)
+		start, end = self.scale.start, self.scale.end
+		for variant in self.vcf.fetch(chrom, start, end):
+			#print(dir(variant))
+			interval = genomeview.Interval(
+					variant.id if variant.id is not None else '{}:{}:{}'.format(variant.chrom, variant.start, variant.alts),
+					variant.chrom,
+					variant.start,
+					variant.stop,
+					None)
+			interval.variant = variant
+			yield interval
+	
+	def draw_interval(self, renderer, interval):
+		# overriding this method isn't really necessary - we're just going to make
+		# sure that every variant is at least several screen pixels wide, even
+		# if we're zoomed pretty far out
+		start = self.scale.topixels(interval.start)
+		end = self.scale.topixels(interval.end)
+		
+		if end - start < self.min_variant_pixel_width:
+			mid = (end + start) / 2
+			start = mid - self.min_variant_pixel_width/2
+			end = mid + self.min_variant_pixel_width/2
+		
+		#row = self.intervals_to_rows[interval.id]
+		row = 1  # fix to second line
+		top = row * (self.row_height + self.margin_y)
+		color = self.color_fn(interval)
+		yield from renderer.rect(start, top, end-start, self.row_height, fill=color,
+                                 **{"stroke":"none"})
+
 ##### visalization ######
+def color_iter(num):
+	num = int(num/2)+1
+	x = np.arange(num)
+	ys = [i+x+(i*x)**2 for i in range(num)]
+	left, right = cm.brg(np.linspace(0, 1, len(ys))), cm.gist_rainbow(np.linspace(0, 1, len(ys)))
+	result = []
+	for l,r in zip(left, right):
+		result.append(l)
+		result.append(r)
+	return iter(result)
+
 class ColorIter(object):
 	def __init__(self, num):
-		self.colors = ['darkblue', 'darkcyan', 'darkgoldenrod', 'darkgreen', 'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue', 'darkturquoise', 'darkviolet', 'lightcoral', 'lightgreen', 'lightpink', 'lightsalmon', 'lightseagreen', 'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise', 'mediumvioletred']
+		self.colors = color_iter(num)
 		self.color = None
-		self.pointer = 0
-		self.len = len(self.colors)
 	def next_color(self): 
-		self.color = self.colors[self.pointer % self.len]
-		self.pointer += 2
+		c = next(self.colors)
+		self.color = mc.to_hex(c[:3])
 		return self.color
 	def this_color(self):
 		return self.color
@@ -61,10 +120,7 @@ def filter_by_umi(interval):
 		return False
 	frag_start = min(interval.reference_start, interval.next_reference_start)
 	frag_end = max(interval.reference_start, interval.next_reference_start)+interval_len
-	#start_l, start_r = frag_start, max(interval.reference_start, interval.next_reference_start)
-	#umi = '{} {} {}'.format(interval.get_tag('RX'), start_l, start_r)
-	#if umi in count and\
-	if		frag_start >= start and\
+	if	frag_start >= start and\
 			frag_end <= end:
 		return True
 	return False
@@ -86,44 +142,49 @@ def stats_umi(bam, chrom, start, end):
 				start_l, start_r = frag_start, max(read.reference_start, read.next_reference_start)
 				umi = '{} {} {}'.format(read.get_tag('RX'), start_l, start_r)
 				count[umi] = count.get(umi, 0) + 1
-	frag_draw, umi_draw = 0, 0
+	frag_draw, umi_draw, umi_all = 0, 0, 0
 	for umi, umi_n in count.items():
 		frag_draw += umi_n
-		umi_draw += 1
-	return count, frag_draw, umi_draw
+		umi_all += 1
+		if umi_n > 1:
+			umi_draw += 1
+	return count, frag_draw, umi_draw, umi_all
 
 def umi_visualization(bams, chrom, start, end, output):
-	import genomeview
 	doc = genomeview.Document(1000)
 	# genome
 	source = genomeview.FastaGenomeSource(REF_FA)
-	gv = genomeview.GenomeView(chrom, start, end, "+", source)
+	gv = genomeview.GenomeView(chrom, max(0, start-50), end+50, "+", source)
 	axis = genomeview.Axis()
 	gv.add_track(axis)
 	for bam in bams:
-		# BAM track
+		# VCF/BAM track
 		name = bam.split('/')[-1]
-		bam_track = genomeview.PairedEndBAMTrack(bam, name=name)
-		gv.add_track(bam_track)
-		label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
-		gv.tracks.insert(0, label_track)
-		# format
-		global count, colors
-		count, frag_draw, umi_draw = stats_umi(bam, chrom, start, end)
-		colors = ColorIter(umi_draw)  # color generater
-		umi_ar = list(count.keys())
-		for umi in umi_ar:
-			umi_n = count[umi]
-			if umi_n < 2:
-				del count[umi]
-			else:
-				count[umi] = colors.next_color()
-		print('{}:{}-{} UMI:{} Fragments:{}'.format(chrom, start, end, umi_draw, frag_draw))
-		bam_track.color_fn = color_by_umi
-		bam_track.include_read_fn = filter_by_umi  # exculde reads out of
+		if bam[-7:] == '.vcf.gz':   # VCF track
+			variant_track = VCFTrack(bam, name)
+			gv.add_track(variant_track)
+		else:  # bam track
+			track = genomeview.PairedEndBAMTrack(bam, name=name)
+			gv.add_track(track)
+			label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
+			gv.tracks.insert(0, label_track)
+			# format
+			global count, colors
+			count, frag_draw, umi_draw, umi_all = stats_umi(bam, chrom, start, end)
+			colors = ColorIter(umi_draw)  # color generater
+			umi_ar = list(count.keys())
+			for umi in umi_ar:
+				umi_n = count[umi]
+				if umi_n < 2:
+					del count[umi]
+				else:
+					count[umi] = colors.next_color()
+			print('{}.svg {}:{}-{} UMI:{} Fragments:{}'.
+					format(output, chrom, start, end, umi_all, frag_draw))
+			track.color_fn = color_by_umi
+			track.include_read_fn = filter_by_umi  # exculde reads out of
 	doc.elements.append(gv)
 	genomeview.save(doc, '{}.svg'.format(output))
-
 
 ##### distribution ######
 def count_umi(bam, chrom, start, end):
@@ -181,7 +242,7 @@ def umi_distribution(bam, chrom, start, end, output):
 			fig_y.append(val)
 		fig = plt.figure()
 		tot_frag = sum(dist.values())
-		fig_y = np.array(fig_y) / tot_frag
+		fig_y = np.array(fig_y) / tot_frag * 100
 		ax = sns.barplot(fig_x, fig_y,
 				color = 'b',
 			)
@@ -204,7 +265,7 @@ def usage():
 	result += 'Version: {}\n'.format(__version__)
 	result += 'Contact: {}\n'.format(__author__)
 	result += '\nUsage:\n'
-	result += '\tumi_vis.py <dis/vis> <chr:start-end> <output> <bam1> [bam2 ...]\n'
+	result += '\tumi_vis.py <dis/vis> <chr:start-end> <output> [vcf.gz] <bam1> [bam2 ...]\n'
 	result += '\nCommands:\n'
 	result += '\tdis\tcheck the umi_distribution in given coordinate\n'
 	result += '\tvis\tvisualize the UMI in given coordinate. PDF and JPG format is support.\n'

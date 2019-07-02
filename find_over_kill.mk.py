@@ -14,7 +14,7 @@ input_file = sys.argv[1] if len(sys.argv) > 1 else './sample.info'
 idx, all_name = 0, ''
 with open(os.path.basename(__file__)[:-3], 'w') as out, open('./sample.info', 'r') as f:
 	for line in f:
-		sam, typ, vcf, raw_bam, cs_C = line.rstrip().split('\t')
+		sam, vcf, raw_bam, cs_C = line.rstrip().split('\t')
 		chrom = 'chrE'
 		out.write('find_over_kill/%s.txt: %s %s\n' % (sam, vcf, raw_bam,))
 		out.write('\tpython3 find_over_kill.py %s %s %s find_over_kill/%s.txt' %

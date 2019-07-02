@@ -40,17 +40,23 @@ def color_by_nuc(base):
 	return colors.get(base.upper(), "gray")
 
 class VCFTrack(genomeview.IntervalTrack):
-	def __init__(self, vcf_path, name=None):
+	def __init__(self, vcf_path, name=None, chrom=None, start=None, end=None):
 		super().__init__([], name=name)
 		self.vcf = pysam.VariantFile(vcf_path)
 		self.intervals = self
 		self.color_fn = color_by_nuc
 		self.row_height = 20
 		self.min_variant_pixel_width = 2
+		self.chrom = chrom
+		self.start, self.end = start, end
 	
 	def __iter__(self):
-		chrom = genomeview.match_chrom_format(self.scale.chrom, self.vcf.header.contigs)
-		start, end = self.scale.start, self.scale.end
+		if self.start is None:
+			start, end = self.scale.start, self.scale.end
+			chrom = genomeview.match_chrom_format(self.scale.chrom, self.vcf.header.contigs)
+		else:
+			chrom = self.chrom
+			start, end = self.start, self.end
 		for variant in self.vcf.fetch(chrom, start, end):
 			#print(dir(variant))
 			interval = genomeview.Interval(
@@ -161,7 +167,7 @@ def umi_visualization(bams, chrom, start, end, output):
 	umi_colors = {}
 	# genome
 	source = genomeview.FastaGenomeSource(REF_FA)
-	gv = genomeview.GenomeView(chrom, max(0, start-50), end+50, "+", source)
+	gv = genomeview.GenomeView(chrom, max(0, start-150), end+150, "+", source)
 	axis = genomeview.Axis()
 	gv.add_track(axis)
 	label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
@@ -170,7 +176,7 @@ def umi_visualization(bams, chrom, start, end, output):
 		# VCF/BAM track
 		name = bam.split('/')[-1]
 		if bam[-7:] == '.vcf.gz':   # VCF track
-			variant_track = VCFTrack(bam, name)
+			variant_track = VCFTrack(bam, name, chrom, start, end)
 			gv.add_track(variant_track)
 		else:  # bam track
 			track = genomeview.PairedEndBAMTrack(bam, name=name)

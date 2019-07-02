@@ -9,6 +9,7 @@ git clone git@github.com:dazhouze/UMI_vis.git
 ## Run
 umi_vis.py have 2 command, dis and vis. "dis" is for UMI distribution analysis and "vis" is for UMI visualzation in given. coordinate.
 ```
-python3 umi_vis.py <dis/vis> <chr:start-end> <output> <bam1> [bam2 ...]
+# for details please run
+python3 umi_vis.py 
 ```
 The "vis" command will generate SVG plot for given genome region and reads with one UMI will be colored grey and more than 1 UMI will be colored randomly except grey.

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 __author__ = 'ZHOU Ze <dazhouze@link.cuhk.edu.hk>'
-__version__ = '0.1'
+__version__ = '0.2'
 
 '''
 UMI is in BAM RX tag.
@@ -281,8 +281,8 @@ def usage():
 	result += '\tdis\tcheck the umi_distribution in given coordinate\n'
 	result += '\tvis\tvisualize the UMI in given coordinate. PDF and JPG format is support.\n'
 	result += '\nExample:\n'
-	result += '\tumi_vis.py dis chrX:1000-2000 ouput.txt sample1.bam\n'
-	result += '\tumi_vis.py vis chrX:1000-2000 ouput.pdf sample1.bam sample2.bam\n'
+	result += '\tumi_vis.py dis chrX:1000-2000 ouput sample.bam\n'
+	result += '\tumi_vis.py vis chrX:1000-2000 ouput sample.vcf sample.bam1 sample.bam2\n'
 	return result
 
 if __name__ == '__main__':

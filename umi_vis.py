@@ -82,14 +82,15 @@ class VCFTrack(genomeview.IntervalTrack):
 
 ##### visalization ######
 def color_iter(num):
-	num = int(num/2)+1
+	num = int(num/3)+1
 	x = np.arange(num)
 	ys = [i+x+(i*x)**2 for i in range(num)]
-	left, right = cm.brg(np.linspace(0, 1, len(ys))), cm.gist_rainbow(np.linspace(0, 1, len(ys)))
+	one, two, three = cm.spring(np.linspace(0, 0.6, len(ys))), cm.plasma(np.linspace(0.1, 0.8, len(ys))), cm.cool(np.linspace(0, 1, len(ys)))
 	result = []
-	for l,r in zip(left, right):
-		result.append(l)
-		result.append(r)
+	for o,t,h in zip(one, two, three):
+		result.append(o)
+		result.append(t)
+		result.append(h)
 	return iter(result)
 
 class ColorIter(object):
@@ -107,9 +108,9 @@ def color_by_umi(interval):
 	interval_len = interval.read.infer_read_length()
 	frag_start = min(interval.read.reference_start, interval.read.next_reference_start)
 	start_l, start_r = frag_start, max(interval.read.reference_start, interval.read.next_reference_start)
-	umi = '{} {} {}'.format(interval.read.get_tag('RX'), start_l, start_r)
-	if umi in count:
-		return count[umi]
+	umi = '{}'.format(interval.read.get_tag('RX'), start_l, start_r)
+	if umi in umi_colors:
+		return umi_colors[umi]
 	return 'lightgrey'
 
 def filter_by_umi(interval):
@@ -140,7 +141,7 @@ def stats_umi(bam, chrom, start, end):
 			frag_end = max(read.reference_start, read.next_reference_start)+read_len
 			if frag_start >= start and frag_end <= end:
 				start_l, start_r = frag_start, max(read.reference_start, read.next_reference_start)
-				umi = '{} {} {}'.format(read.get_tag('RX'), start_l, start_r)
+				umi = '{}'.format(read.get_tag('RX'), start_l, start_r)
 				count[umi] = count.get(umi, 0) + 1
 	frag_draw, umi_draw, umi_all = 0, 0, 0
 	for umi, umi_n in count.items():
@@ -152,11 +153,15 @@ def stats_umi(bam, chrom, start, end):
 
 def umi_visualization(bams, chrom, start, end, output):
 	doc = genomeview.Document(1000)
+	global umi_colors
+	umi_colors = {}
 	# genome
 	source = genomeview.FastaGenomeSource(REF_FA)
 	gv = genomeview.GenomeView(chrom, max(0, start-50), end+50, "+", source)
 	axis = genomeview.Axis()
 	gv.add_track(axis)
+	label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
+	gv.tracks.insert(0, label_track)
 	for bam in bams:
 		# VCF/BAM track
 		name = bam.split('/')[-1]
@@ -166,8 +171,6 @@ def umi_visualization(bams, chrom, start, end, output):
 		else:  # bam track
 			track = genomeview.PairedEndBAMTrack(bam, name=name)
 			gv.add_track(track)
-			label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
-			gv.tracks.insert(0, label_track)
 			# format
 			global count, colors
 			count, frag_draw, umi_draw, umi_all = stats_umi(bam, chrom, start, end)
@@ -175,10 +178,8 @@ def umi_visualization(bams, chrom, start, end, output):
 			umi_ar = list(count.keys())
 			for umi in umi_ar:
 				umi_n = count[umi]
-				if umi_n < 2:
-					del count[umi]
-				else:
-					count[umi] = colors.next_color()
+				if umi_n > 1 and umi not in umi_colors:
+					umi_colors[umi] = colors.next_color()
 			print('{}.svg {}:{}-{} UMI:{} Fragments:{}'.
 					format(output, chrom, start, end, umi_all, frag_draw))
 			track.color_fn = color_by_umi

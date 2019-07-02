@@ -34,9 +34,10 @@ class ThreadWithReturn(threading.Thread):
 		return self._return
 
 # from genomeview
-def color_by_nuc(interval):
+def color_by_nuc(base):
 	colors = {"A":"blue", "C":"organge", "G":"green", "T":"black", "N":"gray"}
-	return colors.get(str(interval.variant.alts[0]).upper(), "gray")
+	#return colors.get(str(interval.variant.alts[0]).upper(), "gray")
+	return colors.get(base.upper(), "gray")
 
 class VCFTrack(genomeview.IntervalTrack):
 	def __init__(self, vcf_path, name=None):
@@ -74,18 +75,21 @@ class VCFTrack(genomeview.IntervalTrack):
 			end = mid + self.min_variant_pixel_width/2
 		
 		#row = self.intervals_to_rows[interval.id]
-		row = 1  # fix to second line
-		top = row * (self.row_height + self.margin_y)
-		color = self.color_fn(interval)
-		yield from renderer.rect(start, top, end-start, self.row_height, fill=color,
-                                 **{"stroke":"none"})
+		#row = 1  # fix to second line
+		for idx,alt in enumerate(interval.variant.alts):
+			row = self.intervals_to_rows[interval.id] + idx
+			top = row * (self.row_height + self.margin_y)
+			#color = self.color_fn(interval)
+			color = self.color_fn(alt)
+			yield from renderer.rect(start, top, end-start, self.row_height, fill=color,
+    		                         **{"stroke":"none"})
 
 ##### visalization ######
 def color_iter(num):
 	num = int(num/3)+1
 	x = np.arange(num)
 	ys = [i+x+(i*x)**2 for i in range(num)]
-	one, two, three = cm.spring(np.linspace(0, 0.6, len(ys))), cm.plasma(np.linspace(0.1, 0.8, len(ys))), cm.cool(np.linspace(0, 1, len(ys)))
+	one, two, three = cm.spring(np.linspace(0, 0.6, len(ys))), cm.plasma(np.linspace(0.1, 0.8, len(ys))), cm.cool(np.linspace(0, 0.7, len(ys)))
 	result = []
 	for o,t,h in zip(one, two, three):
 		result.append(o)

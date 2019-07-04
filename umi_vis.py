@@ -35,7 +35,7 @@ class ThreadWithReturn(threading.Thread):
 
 # from genomeview
 def color_by_nuc(base):
-	colors = {"A":"blue", "C":"organge", "G":"green", "T":"black", "N":"gray"}
+	colors = {"A":"blue", "C":"orange", "G":"green", "T":"black", "N":"gray"}
 	#return colors.get(str(interval.variant.alts[0]).upper(), "gray")
 	return colors.get(base.upper(), "gray")
 
@@ -46,7 +46,7 @@ class VCFTrack(genomeview.IntervalTrack):
 		self.intervals = self
 		self.color_fn = color_by_nuc
 		self.row_height = 20
-		self.min_variant_pixel_width = 2
+		self.min_variant_pixel_width = 3
 		self.chrom = chrom
 		self.start, self.end = start, end
 	
@@ -83,12 +83,13 @@ class VCFTrack(genomeview.IntervalTrack):
 		#row = self.intervals_to_rows[interval.id]
 		#row = 1  # fix to second line
 		for idx,alt in enumerate(interval.variant.alts):
-			row = self.intervals_to_rows[interval.id] + idx
+			row = idx
 			top = row * (self.row_height + self.margin_y)
 			#color = self.color_fn(interval)
 			color = self.color_fn(alt)
 			yield from renderer.rect(start, top, end-start, self.row_height, fill=color,
     		                         **{"stroke":"none"})
+			print(row, start, end, interval.variant.alts, color)
 
 ##### visalization ######
 def color_iter(num):
@@ -196,6 +197,7 @@ def umi_visualization(bams, chrom, start, end, output):
 			track.include_read_fn = filter_by_umi  # exculde reads out of
 	doc.elements.append(gv)
 	genomeview.save(doc, '{}.svg'.format(output))
+	#genomeview.save(doc, '{}.pdf'.format(output), outformat='pdf')
 
 ##### distribution ######
 def count_umi(bam, chrom, start, end):
@@ -252,8 +254,8 @@ def umi_distribution(bam, chrom, start, end, output):
 			fig_x.append(umi_n)
 			fig_y.append(val)
 		fig = plt.figure()
-		tot_frag = sum(dist.values())
-		fig_y = np.array(fig_y) / tot_frag * 100
+		tot_reads = sum(dist.values())
+		fig_y = np.array(fig_y) / tot_reads * 100
 		ax = sns.barplot(fig_x, fig_y,
 				color = 'b',
 			)
@@ -265,7 +267,7 @@ def umi_distribution(bam, chrom, start, end, output):
 			coor += ':{}'.format(start)
 		if end is not None:
 			coor += '-{}'.format(end)
-		plt.title('{}\n{} #{}'.format(title, coor, tot_frag), fontsize=20)
+		plt.title('{}\n{} #{}'.format(title, coor, tot_reads), fontsize=20)
 		plt.ylabel('Frequency (%)', fontsize=20)
 		plt.xlabel('UMI ', fontsize=20)
 		plt.tight_layout()

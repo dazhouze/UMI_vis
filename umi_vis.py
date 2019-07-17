@@ -36,7 +36,6 @@ class ThreadWithReturn(threading.Thread):
 # from genomeview
 def color_by_nuc(base):
 	colors = {"A":"blue", "C":"orange", "G":"green", "T":"black", "N":"gray"}
-	#return colors.get(str(interval.variant.alts[0]).upper(), "gray")
 	return colors.get(base.upper(), "gray")
 
 class VCFTrack(genomeview.IntervalTrack):
@@ -45,7 +44,7 @@ class VCFTrack(genomeview.IntervalTrack):
 		self.vcf = pysam.VariantFile(vcf_path)
 		self.intervals = self
 		self.color_fn = color_by_nuc
-		self.row_height = 20
+		self.row_height = 15
 		self.min_variant_pixel_width = 3
 		self.chrom = chrom
 		self.start, self.end = start, end
@@ -89,19 +88,18 @@ class VCFTrack(genomeview.IntervalTrack):
 			color = self.color_fn(alt)
 			yield from renderer.rect(start, top, end-start, self.row_height, fill=color,
     		                         **{"stroke":"none"})
-			print(row, start, end, interval.variant.alts, color)
 
 ##### visalization ######
 def color_iter(num):
 	num = int(num/3)+1
 	x = np.arange(num)
 	ys = [i+x+(i*x)**2 for i in range(num)]
-	one, two, three = cm.spring(np.linspace(0, 0.6, len(ys))), cm.plasma(np.linspace(0.1, 0.8, len(ys))), cm.cool(np.linspace(0, 0.7, len(ys)))
+	colormaps = cm.spring(np.linspace(0, 0.6, len(ys))), cm.plasma(np.linspace(0.35, 0.8, len(ys))), cm.cool(np.linspace(0.2, 0.9, len(ys)))
 	result = []
-	for o,t,h in zip(one, two, three):
-		result.append(o)
-		result.append(t)
-		result.append(h)
+	for colormap in colormaps:
+		for c in colormap:
+			result.append(c)
+	shuffle(result)
 	return iter(result)
 
 class ColorIter(object):
@@ -137,8 +135,16 @@ def filter_by_umi(interval):
 		return True
 	return False
 
+def filter_by_coor(interval):
+	read_start = interval.reference_start
+	read_end = interval.reference_end
+	if	read_start >= start and\
+			read_end <= end:
+		return True
+	return False
+
 def stats_umi(bam, chrom, start, end):
-	count = {}
+	count, any_umi = {}, set()
 	with pysam.AlignmentFile(bam, 'rb') as samfile:
 		for read in samfile.fetch(chrom, start, end):
 			if read.template_length > 0:
@@ -150,6 +156,7 @@ def stats_umi(bam, chrom, start, end):
 				continue
 			frag_start = min(read.reference_start, read.next_reference_start)
 			frag_end = max(read.reference_start, read.next_reference_start)+read_len
+			any_umi.add(read.get_tag('RX'))
 			if frag_start >= start and frag_end <= end:
 				start_l, start_r = frag_start, max(read.reference_start, read.next_reference_start)
 				umi = '{}'.format(read.get_tag('RX'), start_l, start_r)
@@ -160,15 +167,15 @@ def stats_umi(bam, chrom, start, end):
 		umi_all += 1
 		if umi_n > 1:
 			umi_draw += 1
-	return count, frag_draw, umi_draw, umi_all
+	return count, frag_draw, umi_draw, umi_all, any_umi
 
-def umi_visualization(bams, chrom, start, end, output):
+def umi_visualization(bams, chrom, start, end, output, coor):
 	doc = genomeview.Document(1000)
 	global umi_colors
 	umi_colors = {}
 	# genome
 	source = genomeview.FastaGenomeSource(REF_FA)
-	gv = genomeview.GenomeView(chrom, max(0, start-150), end+150, "+", source)
+	gv = genomeview.GenomeView(chrom, max(0, start), end, "+", source)
 	axis = genomeview.Axis()
 	gv.add_track(axis)
 	label_track = genomeview.track.TrackLabel('{}:{}-{}'.format(chrom, start, end))
@@ -181,49 +188,67 @@ def umi_visualization(bams, chrom, start, end, output):
 			gv.add_track(variant_track)
 		else:  # bam track
 			track = genomeview.PairedEndBAMTrack(bam, name=name)
+			#track = genomeview.SingleEndBAMTrack(bam, name=name)
 			gv.add_track(track)
+			track.nuc_colors = {"A":"blue", "C":"orange", "G":"green", "T":"black", "N":"gray"}
+			track.quick_consensus = False
 			# format
 			global count, colors
-			count, frag_draw, umi_draw, umi_all = stats_umi(bam, chrom, start, end)
-			colors = ColorIter(umi_draw)  # color generater
-			umi_ar = list(count.keys())
-			for umi in umi_ar:
-				umi_n = count[umi]
-				if umi_n > 1 and umi not in umi_colors:
+			count, frag_draw, umi_draw, umi_all, any_umi = stats_umi(bam, chrom, start, end)
+
+			if len(coor.split(':')) == 3:
+				colors = ColorIter(umi_draw)  # color generater
+				umi_ar = list(count.keys())
+				for umi in umi_ar:
+					umi_n = count[umi]
+					if umi_n > 1 and umi not in umi_colors:
+						umi_colors[umi] = colors.next_color()
+				track.color_fn = color_by_umi
+				track.include_read_fn = filter_by_umi  # exculde reads out of
+			else:
+				colors = ColorIter(len(any_umi))  # color generater
+				for umi in any_umi:
 					umi_colors[umi] = colors.next_color()
-			print('{}.svg {}:{}-{} UMI:{} Fragments:{}'.
-					format(output, chrom, start, end, umi_all, frag_draw))
-			track.color_fn = color_by_umi
-			track.include_read_fn = filter_by_umi  # exculde reads out of
+				track.include_read_fn = filter_by_coor  # exculde reads out of
+				#track.color_fn = color_by_umi
+				track.color_fn = lambda x: "lightgray"
 	doc.elements.append(gv)
 	genomeview.save(doc, '{}.svg'.format(output))
 	#genomeview.save(doc, '{}.pdf'.format(output), outformat='pdf')
 
 ##### distribution ######
 def count_umi(bam, chrom, start, end):
-	count = {}
+	count_umi = {}  # same umi reads
+	count_coor = {}  # same coor reads
 	with pysam.AlignmentFile(bam, 'rb') as samfile:
 		for read in samfile.fetch(chrom, start, end):
 			if read.template_length > 0:
 				continue
-			if read.reference_start is None or read.reference_end is None:
+			if read.reference_start is None or\
+					read.reference_end is None or\
+					read.infer_read_length() is None:
 				continue
-			if not start <= (read.reference_start+read.reference_end)/2 < end:
+			mid_pos = (read.reference_start + read.reference_end)/2
+			if not start <= mid_pos < end:
 				continue
 			umi = read.get_tag('RX')
-			count[umi] = count.get(umi, 0) + 1
-	dist = {}
-	for umi, umi_n in count.items():
-		dist[umi_n] = dist.get(umi_n, 0) + 1
-	return count, dist
+			count_umi[umi] = count_umi.get(umi, 0) + 1
+			coor = '{}-{}'.format(read.reference_start, read.reference_end)
+			count_coor[coor] = count_coor.get(coor, 0) + 1
+	dist_umi = {}  # umi distribution
+	for umi, umi_n in count_umi.items():
+		dist_umi[umi_n] = dist_umi.get(umi_n, 0) + 1
+	dist_coor = {}  # coor distribution
+	for coor, coor_n in count_coor.items():
+		dist_coor[coor_n] = dist_coor.get(coor_n, 0) + 1
+	return dist_umi, dist_coor
 
-def umi_distribution(bam, chrom, start, end, output):
+def umi_distribution(bam, chrom, start, end, output, coor):
 	import matplotlib as mpl
 	mpl.use('Agg')
 	import matplotlib.pyplot as plt
 	import matplotlib.backends.backend_pdf
 	import seaborn as sns
-	dist = {}  # umi count
 	threads_list = []
 	if end is None:
 		with pysam.AlignmentFile(bam, 'rb') as samfile:
@@ -239,37 +264,67 @@ def umi_distribution(bam, chrom, start, end, output):
 				name='{}\t{}\t{}'.format(chrom, s, e))
 		threads_list.append(t)
 		t.start()
-	with open('{}.txt'.format(output), 'w') as out:
-		for t in threads_list:
-			count, result = t.join()
-			for umi_n, val in sorted(result.items()):
-				dist[umi_n] = dist.get(umi_n, 0) + val
-				out.write('{}\t{}\t{}\n'.format(t.name, umi_n, val))
+	tot_dist_umi, tot_dist_coor = {}, {}  # umi count
+	for t in threads_list:
+		dist_umi, dist_coor = t.join()
+		for umi_n, val in sorted(dist_umi.items()):
+			tot_dist_umi[umi_n] = tot_dist_umi.get(umi_n, 0) + val
+		for coor_n, val in sorted(dist_coor.items()):
+			tot_dist_coor[coor_n] = tot_dist_coor.get(coor_n, 0) + val
 
-	with matplotlib.backends.backend_pdf.PdfPages('{}.pdf'.format(output)) as pdf_all:
+	with matplotlib.backends.backend_pdf.PdfPages('{}.pdf'.format(output)) as pdf_all,\
+			open('{}.txt'.format(output), 'w') as out:
+		# umi distribution
 		fig_x, fig_y = [], []
-		for umi_n, val in sorted(dist.items()):
+		for umi_n, val in sorted(tot_dist_umi.items()):
 			if umi_n > 10:
 				break
 			fig_x.append(umi_n)
 			fig_y.append(val)
 		fig = plt.figure()
-		tot_reads = sum(dist.values())
-		fig_y = np.array(fig_y) / tot_reads * 100
+		tot_family = sum(tot_dist_umi.values())
+		tot_reads = 0
+		for umi_n, family_n in tot_dist_umi.items():
+			tot_reads += umi_n * family_n
+		fig_y = np.array(fig_y) / tot_family * 100
 		ax = sns.barplot(fig_x, fig_y,
 				color = 'b',
 			)
 		plt.xticks(fontsize=15)
 		plt.yticks(fontsize=15)
 		title = output.split('/')[-1].split('.')[0]
-		coor = chrom
-		if start is not None:
-			coor += ':{}'.format(start)
-		if end is not None:
-			coor += '-{}'.format(end)
-		plt.title('{}\n{} #{}'.format(title, coor, tot_reads), fontsize=20)
+		plt.title('{} ({})\nReads:{:,} Family:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=20)
+		out.write('umi\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
 		plt.ylabel('Frequency (%)', fontsize=20)
-		plt.xlabel('UMI ', fontsize=20)
+		plt.xlabel('UMI family size', fontsize=20)
+		plt.tight_layout()
+		pdf_all.savefig()
+		# same distribution
+		fig_x, fig_y = [], []
+		for coor_n, val in sorted(tot_dist_coor.items()):
+			if coor_n > 10:
+				break
+			fig_x.append(coor_n)
+			fig_y.append(val)
+		fig = plt.figure()
+		tot_family = sum(tot_dist_coor.values())
+		tot_reads = 0
+		for coor_n, family_n in tot_dist_coor.items():
+			tot_reads += coor_n * family_n
+		fig_y = np.array(fig_y) / tot_family * 100
+		ax = sns.barplot(fig_x, fig_y,
+				color = 'b',
+			)
+		plt.xticks(fontsize=15)
+		plt.yticks(fontsize=15)
+		title = output.split('/')[-1].split('.')[0]
+		plt.title('{} ({})\nReads:{:,} Rmdup:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=20)
+		out.write('rmdup\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
+		plt.ylabel('Frequency (%)', fontsize=20)
+		plt.ylabel('Frequency (%)', fontsize=20)
+		plt.xlabel('Duplicate reads number', fontsize=20)
 		plt.tight_layout()
 		pdf_all.savefig()
 
@@ -292,7 +347,6 @@ if __name__ == '__main__':
 	if len(sys.argv) < 5 or sys.argv[1] not in ('dis', 'vis'):  # untraced paramters
 		sys.exit('\n*** Incorrect parameter ***\n{}'.format(usage()))
 	method, coor, output, bams, = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
-
 	try:
 		info = coor.split(':')
 		if len(info) == 1:
@@ -303,6 +357,8 @@ if __name__ == '__main__':
 			if len(info) == 1:
 				start = int(info[0])
 				end = start + 1 
+				start = max(0, start-50)
+				end = end + 50
 			else:
 				start, end = int(info[0]), int(info[1])
 	except:
@@ -310,6 +366,6 @@ if __name__ == '__main__':
 	if method == 'dis':
 		if len(bams) > 1:
 			sys.exit('\n*** Incorrect bam file number (allow 1) {} ***\n{}'.format(bams, usage()))
-		umi_distribution(bams[0], chrom, start, end, output)
+		umi_distribution(bams[0], chrom, start, end, output, coor)
 	else:
-		umi_visualization(bams, chrom, start, end, output)
+		umi_visualization(bams, chrom, start, end, output, coor)

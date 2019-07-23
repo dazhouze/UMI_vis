@@ -136,12 +136,15 @@ def filter_by_umi(interval):
 	return False
 
 def filter_by_coor(interval):
+	'''
 	read_start = interval.reference_start
 	read_end = interval.reference_end
 	if	read_start >= start and\
 			read_end <= end:
 		return True
 	return False
+	'''
+	return True
 
 def stats_umi(bam, chrom, start, end):
 	count, any_umi = {}, set()
@@ -210,8 +213,8 @@ def umi_visualization(bams, chrom, start, end, output, coor):
 				for umi in any_umi:
 					umi_colors[umi] = colors.next_color()
 				track.include_read_fn = filter_by_coor  # exculde reads out of
-				#track.color_fn = color_by_umi
-				track.color_fn = lambda x: "lightgray"
+				track.color_fn = color_by_umi
+				#track.color_fn = lambda x: "lightgray"
 	doc.elements.append(gv)
 	genomeview.save(doc, '{}.svg'.format(output))
 	#genomeview.save(doc, '{}.pdf'.format(output), outformat='pdf')
@@ -222,7 +225,7 @@ def count_umi(bam, chrom, start, end):
 	count_coor = {}  # same coor reads
 	with pysam.AlignmentFile(bam, 'rb') as samfile:
 		for read in samfile.fetch(chrom, start, end):
-			if read.template_length > 0:
+			if read.template_length > 0:  # half of reads
 				continue
 			if read.reference_start is None or\
 					read.reference_end is None or\
@@ -231,9 +234,12 @@ def count_umi(bam, chrom, start, end):
 			mid_pos = (read.reference_start + read.reference_end)/2
 			if not start <= mid_pos < end:
 				continue
+			frag_start = min(read.reference_start, read.next_reference_start)
+			frag_end = max(read.reference_start, read.next_reference_start)+read.infer_read_length()
 			umi = read.get_tag('RX')
+			umi = '{}:{}:{}:{}'.format(read.reference_name, frag_start, frag_end, umi)
 			count_umi[umi] = count_umi.get(umi, 0) + 1
-			coor = '{}-{}'.format(read.reference_start, read.reference_end)
+			coor = '{}:{}:{}'.format(read.reference_name, frag_start, frag_end)
 			count_coor[coor] = count_coor.get(coor, 0) + 1
 	dist_umi = {}  # umi distribution
 	for umi, umi_n in count_umi.items():
@@ -284,8 +290,8 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		fig = plt.figure()
 		tot_family = sum(tot_dist_umi.values())
 		tot_reads = 0
-		for umi_n, family_n in tot_dist_umi.items():
-			tot_reads += umi_n * family_n
+		for coor_n, family_n in tot_dist_umi.items():
+			tot_reads += coor_n * family_n
 		fig_y = np.array(fig_y) / tot_family * 100
 		ax = sns.barplot(fig_x, fig_y,
 				color = 'b',
@@ -293,13 +299,31 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		plt.xticks(fontsize=15)
 		plt.yticks(fontsize=15)
 		title = output.split('/')[-1].split('.')[0]
-		plt.title('{} ({})\nReads:{:,} Family:{:,} Mean:{:.2f}'.
-				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=20)
+		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
 		out.write('umi\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
 		plt.ylabel('Frequency (%)', fontsize=20)
-		plt.xlabel('UMI family size', fontsize=20)
+		plt.xlabel('The no. of fragments per UMI cluster', fontsize=20)
 		plt.tight_layout()
 		pdf_all.savefig()
+		# all
+		fig_x, fig_y = [], []
+		for umi_n, val in sorted(tot_dist_umi.items()):
+			fig_x.append(umi_n)
+			fig_y.append(val/sum(tot_dist_umi.values())*100)
+		fig = plt.figure()
+		plt.plot(fig_x, fig_y, color='b')
+		plt.xticks(fontsize=15)
+		plt.yticks(fontsize=15)
+		plt.ylabel('Frequency (%)', fontsize=20)
+		plt.xlabel('The no. of fragments per UMI cluster', fontsize=20)
+		title = output.split('/')[-1].split('.')[0]
+		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
+		out.write('umi\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
+		plt.tight_layout()
+		pdf_all.savefig()
+
 		# same distribution
 		fig_x, fig_y = [], []
 		for coor_n, val in sorted(tot_dist_coor.items()):
@@ -319,12 +343,27 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		plt.xticks(fontsize=15)
 		plt.yticks(fontsize=15)
 		title = output.split('/')[-1].split('.')[0]
-		plt.title('{} ({})\nReads:{:,} Rmdup:{:,} Mean:{:.2f}'.
-				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=20)
+		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
 		out.write('rmdup\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
 		plt.ylabel('Frequency (%)', fontsize=20)
+		plt.xlabel('The frequency of duplicated fragments', fontsize=20)
+		plt.tight_layout()
+		pdf_all.savefig()
+		# all
+		fig_x, fig_y = [], []
+		for umi_n, val in sorted(tot_dist_coor.items()):
+			fig_x.append(umi_n)
+			fig_y.append(val/sum(tot_dist_coor.values())*100)
+		fig = plt.figure()
+		plt.plot(fig_x, fig_y, color='b')
+		plt.xticks(fontsize=15)
+		plt.yticks(fontsize=15)
+		title = output.split('/')[-1].split('.')[0]
+		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
+				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
 		plt.ylabel('Frequency (%)', fontsize=20)
-		plt.xlabel('Duplicate reads number', fontsize=20)
+		plt.xlabel('The frequency of duplicated fragments', fontsize=20)
 		plt.tight_layout()
 		pdf_all.savefig()
 

@@ -278,24 +278,27 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		for coor_n, val in sorted(dist_coor.items()):
 			tot_dist_coor[coor_n] = tot_dist_coor.get(coor_n, 0) + val
 
+	xlim, ylim = [], []
+	for dt in (tot_dist_umi, tot_dist_coor):
+		xmax, ymax = max(dt.keys()), max(dt.values()) / sum(dt.values()) * 100
+		xlim.append(xmax)
+		ylim.append(ymax)
+	xlim, ylim = min(xlim), max(ylim)*1.1
+
 	with matplotlib.backends.backend_pdf.PdfPages('{}.pdf'.format(output)) as pdf_all,\
 			open('{}.txt'.format(output), 'w') as out:
 		# umi distribution
 		fig_x, fig_y = [], []
 		for umi_n, val in sorted(tot_dist_umi.items()):
-			if umi_n > 10:
-				break
 			fig_x.append(umi_n)
-			fig_y.append(val)
-		fig = plt.figure()
+			fig_y.append(val/sum(tot_dist_umi.values())*100)
 		tot_family = sum(tot_dist_umi.values())
 		tot_reads = 0
 		for coor_n, family_n in tot_dist_umi.items():
 			tot_reads += coor_n * family_n
-		fig_y = np.array(fig_y) / tot_family * 100
-		ax = sns.barplot(fig_x, fig_y,
-				color = 'b',
-			)
+
+		fig = plt.figure()
+		plt.plot(fig_x, fig_y, color='b')
 		plt.xticks(fontsize=15)
 		plt.yticks(fontsize=15)
 		title = output.split('/')[-1].split('.')[0]
@@ -306,40 +309,22 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		plt.xlabel('The no. of fragments per UMI cluster', fontsize=20)
 		plt.tight_layout()
 		pdf_all.savefig()
-		# all
-		fig_x, fig_y = [], []
-		for umi_n, val in sorted(tot_dist_umi.items()):
-			fig_x.append(umi_n)
-			fig_y.append(val/sum(tot_dist_umi.values())*100)
-		fig = plt.figure()
-		plt.plot(fig_x, fig_y, color='b')
-		plt.xticks(fontsize=15)
-		plt.yticks(fontsize=15)
-		plt.ylabel('Frequency (%)', fontsize=20)
-		plt.xlabel('The no. of fragments per UMI cluster', fontsize=20)
-		title = output.split('/')[-1].split('.')[0]
-		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
-				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
-		out.write('umi\t{}\t{}\t{}\n'.format(tot_reads, tot_family, tot_reads/tot_family))
-		plt.tight_layout()
+		plt.ylim(ymax = ylim)
+		plt.xlim(-5, xlim)
 		pdf_all.savefig()
 
 		# same distribution
 		fig_x, fig_y = [], []
 		for coor_n, val in sorted(tot_dist_coor.items()):
-			if coor_n > 10:
-				break
 			fig_x.append(coor_n)
-			fig_y.append(val)
-		fig = plt.figure()
+			fig_y.append(val/sum(tot_dist_coor.values())*100)
 		tot_family = sum(tot_dist_coor.values())
 		tot_reads = 0
 		for coor_n, family_n in tot_dist_coor.items():
 			tot_reads += coor_n * family_n
-		fig_y = np.array(fig_y) / tot_family * 100
-		ax = sns.barplot(fig_x, fig_y,
-				color = 'b',
-			)
+
+		fig = plt.figure()
+		plt.plot(fig_x, fig_y, color='b')
 		plt.xticks(fontsize=15)
 		plt.yticks(fontsize=15)
 		title = output.split('/')[-1].split('.')[0]
@@ -350,23 +335,10 @@ def umi_distribution(bam, chrom, start, end, output, coor):
 		plt.xlabel('The frequency of duplicated fragments', fontsize=20)
 		plt.tight_layout()
 		pdf_all.savefig()
-		# all
-		fig_x, fig_y = [], []
-		for umi_n, val in sorted(tot_dist_coor.items()):
-			fig_x.append(umi_n)
-			fig_y.append(val/sum(tot_dist_coor.values())*100)
-		fig = plt.figure()
-		plt.plot(fig_x, fig_y, color='b')
-		plt.xticks(fontsize=15)
-		plt.yticks(fontsize=15)
-		title = output.split('/')[-1].split('.')[0]
-		plt.title('{} ({})\nFragments:{:,}\nFamily:{:,} Mean:{:.2f}'.
-				format(title, coor, tot_reads, tot_family, tot_reads/tot_family), fontsize=18)
-		plt.ylabel('Frequency (%)', fontsize=20)
-		plt.xlabel('The frequency of duplicated fragments', fontsize=20)
-		plt.tight_layout()
+		plt.ylim(ymax = ylim)
+		plt.xlim(-5, xlim)
 		pdf_all.savefig()
-
+		
 def usage():
 	result = '\nProgram: {}\n'.format(__file__)
 	result += 'Version: {}\n'.format(__version__)
